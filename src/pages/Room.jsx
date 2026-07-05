@@ -18,6 +18,7 @@ export default function Room() {
   const remoteVideoRef = useRef(null)
   const localStreamRef = useRef(null)
   const pendingShotRef = useRef(null)
+  const partnerPhotoBufferRef = useRef(null) // partner photo that arrived before our capture
   const engineRef = useRef(null)
 
   const [mySide, setMySide] = useState('left')
@@ -72,9 +73,12 @@ export default function Room() {
   const captureFrame = useCallback(() => {
     const video = localVideoRef.current
     if (!video || !video.videoWidth) return null
+    // Cap at 1280px wide: phones capture 1920+ and the resulting payload can
+    // be too large to transfer reliably over the data channel on mobile data.
+    const scale = Math.min(1, 1280 / video.videoWidth)
     const canvas = document.createElement('canvas')
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
+    canvas.width = Math.round(video.videoWidth * scale)
+    canvas.height = Math.round(video.videoHeight * scale)
     const ctx = canvas.getContext('2d')
     const f = getFilter(filterIdRef.current)
     if (f.css !== 'none') ctx.filter = f.css
@@ -82,7 +86,7 @@ export default function Room() {
       ctx.translate(canvas.width, 0)
       ctx.scale(-1, 1)
     }
-    ctx.drawImage(video, 0, 0)
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.filter = 'none'
     const eng = engineRef.current
@@ -125,23 +129,38 @@ export default function Room() {
       shutterSound()
 
       const mine = captureFrame()
+      // Partner photo that arrived while we were still capturing
+      const buffered = partnerPhotoBufferRef.current
+      const bufferedFresh = buffered && Date.now() - buffered.ts < 20000
+      partnerPhotoBufferRef.current = null
+
       if (!mine) {
-        showToast('Could not capture — is your camera on?')
+        if (bufferedFresh) {
+          // Our camera failed but the partner's photo made it — keep the
+          // moment by using their photo on both sides.
+          finishShot(buffered.img, buffered.img, buffered.side === 'left' ? 'right' : 'left')
+          showToast("Your camera didn't capture — saved your partner's photo.")
+        } else {
+          showToast('Could not capture — is your camera on?')
+        }
         return
       }
       const solo = !partnerRef.current
       roomRef.current?.sendPhoto(mine, mySideRef.current)
       if (solo) {
         finishShot(mine, null)
+      } else if (bufferedFresh) {
+        finishShot(mine, buffered.img, buffered.side)
       } else {
-        // wait for partner's frame (they send theirs at the same moment)
+        // wait for partner's frame (they send theirs at roughly the same moment;
+        // give slow mobile connections time to push the image through)
         pendingShotRef.current = { mine, timer: setTimeout(() => {
           if (pendingShotRef.current) {
             finishShot(pendingShotRef.current.mine, null)
             pendingShotRef.current = null
             showToast("Partner's photo didn't arrive — saved yours solo.")
           }
-        }, 8000) }
+        }, 15000) }
       }
     }, 1000)
   }, [captureFrame, finishShot])
@@ -162,6 +181,10 @@ export default function Room() {
           clearTimeout(pending.timer)
           pendingShotRef.current = null
           finishShot(pending.mine, img, side)
+        } else {
+          // Our own capture hasn't finished yet (or is about to start) —
+          // hold on to the partner's photo instead of dropping it.
+          partnerPhotoBufferRef.current = { img, side, ts: Date.now() }
         }
       },
       onPartnerFilter: (fid) => setPartnerFilterId(fid),
@@ -297,6 +320,9 @@ export default function Room() {
         <button onClick={copyLink} className="clay-btn px-4 py-1.5 bg-secondary hover:bg-rose-500 text-white text-sm">
           {copied ? 'Copied! ✓' : 'Copy invite link'}
         </button>
+        <Link to="/memories" className="px-3 py-1.5 rounded-full text-sm font-display text-primary hover:bg-rose-100 transition-colors duration-200">
+          Memories
+        </Link>
         <div className="ml-auto flex items-center gap-2 text-sm">
           <span className={`w-2.5 h-2.5 rounded-full ${partner ? 'bg-emerald-500' : 'bg-amber-400 animate-pulse'}`} aria-hidden="true" />
           <span className="text-ink/70">{partner ? `${partner.name} is here` : 'Waiting for partner…'}</span>
@@ -387,7 +413,15 @@ export default function Room() {
           {tab === 'filters' && (
             <FilterPicker selected={filterId} onSelect={pickFilter} previewStream={localStream} />
           )}
-          {tab === 'strip' && <ExportPanel shots={shots} />}
+          {tab === 'strip' && (
+            <ExportPanel
+              shots={shots}
+              roomId={roomId}
+              onReset={() => setShots([])}
+              onDeleteShot={(id) => setShots((prev) => prev.filter((s) => s.id !== id))}
+              onToast={showToast}
+            />
+          )}
           {tab === 'chat' && (
             <Chat messages={messages} selfId="me" onSend={sendChat} />
           )}

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 
 function randomRoomId() {
   const chars = 'abcdefghjkmnpqrstuvwxyz23456789'
@@ -99,6 +99,11 @@ export default function Home() {
 
         <p className="text-center text-sm text-ink/50 mt-6">
           Create a room, send the link, strike a pose together 📸
+        </p>
+        <p className="text-center mt-3">
+          <Link to="/memories" className="text-sm font-display text-primary hover:underline">
+            View your Memories →
+          </Link>
         </p>
       </div>
     </div>

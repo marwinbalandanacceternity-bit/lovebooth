@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { LAYOUTS, BORDER_THEMES, composeLayout } from '../lib/layouts'
 import { downloadComposedPng, downloadIndividuals, downloadPdf, downloadZip, downloadDataUrl } from '../lib/export'
+import { saveSession } from '../lib/history'
 
-export default function ExportPanel({ shots }) {
+export default function ExportPanel({ shots, roomId, onReset, onDeleteShot, onToast }) {
   const [layoutId, setLayoutId] = useState('strip4')
   const [themeId, setThemeId] = useState('white')
   const [rounded, setRounded] = useState(true)
@@ -38,6 +39,27 @@ export default function ExportPanel({ shots }) {
     setBusy(true)
     try { await fn() } finally { setBusy(false) }
   }
+
+  const archiveSession = async () => {
+    await saveSession({
+      roomId,
+      stripPng: composedCanvas ? composedCanvas.toDataURL('image/jpeg', 0.9) : null,
+      shots,
+    })
+  }
+
+  const saveToMemories = () => run(async () => {
+    await archiveSession()
+    onToast?.('Saved to Memories on this device 💕')
+  })
+
+  const startNewSet = () => run(async () => {
+    if (shots.length > 0) {
+      await archiveSession()
+      onToast?.('Set saved to Memories — ready for the next one! 📸')
+    }
+    onReset?.()
+  })
 
   return (
     <div className="space-y-4">
@@ -132,6 +154,19 @@ export default function ExportPanel({ shots }) {
         </button>
       </div>
 
+      {/* Memories + reset */}
+      <div className="grid grid-cols-2 gap-2">
+        <button disabled={shots.length === 0 || busy} onClick={saveToMemories} className="clay-btn py-2.5 bg-violet-600 hover:bg-violet-700 text-white text-sm">
+          Save to Memories
+        </button>
+        <button disabled={shots.length === 0 || busy} onClick={startNewSet} className="clay-btn py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm">
+          Start New Set
+        </button>
+      </div>
+      <p className="text-xs text-ink/50 -mt-2">
+        "Start New Set" saves this set to Memories and clears the strip for your next round. Memories are kept on this device.
+      </p>
+
       {/* Canva hand-off */}
       <div className="rounded-2xl bg-violet-50 border-2 border-violet-200 p-4">
         <h3 className="font-display font-medium text-violet-900 mb-1">Customize in Canva</h3>
@@ -168,6 +203,16 @@ export default function ExportPanel({ shots }) {
                   aria-label={`Download shot ${i + 1}`}
                 >
                   Download
+                </button>
+                <button
+                  onClick={() => onDeleteShot?.(s.id)}
+                  className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 hover:bg-primary text-white text-xs leading-none cursor-pointer transition-colors duration-200 flex items-center justify-center"
+                  aria-label={`Delete shot ${i + 1}`}
+                  title="Delete this shot (retake)"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5" aria-hidden="true">
+                    <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
+                  </svg>
                 </button>
               </div>
             ))}

@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import Home from './pages/Home.jsx'
 import Room from './pages/Room.jsx'
+import Memories from './pages/Memories.jsx'
 import './index.css'
 
 // No StrictMode: its dev double-mount would claim the room's peer ID twice
@@ -12,6 +13,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <Routes>
       <Route path="/" element={<Home />} />
       <Route path="/room/:roomId" element={<Room />} />
+      <Route path="/memories" element={<Memories />} />
     </Routes>
   </BrowserRouter>
 )
