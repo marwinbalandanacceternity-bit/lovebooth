@@ -21,10 +21,15 @@ npm run build
 npm start        # Express serves dist/ and Socket.io on port 3001 (set LOVEBOOTH_PORT to change)
 ```
 
-**Important:** browsers only allow camera access on `localhost` or **HTTPS**. To use it with your partner for real, either:
+**Important:** browsers only allow camera access on `localhost` or **HTTPS**. To use it with your partner for real (phone-to-phone, phone-to-PC, any combo), either:
 
-1. **Deploy it** (recommended): Render, Railway, or Fly.io all give you HTTPS for free. Build command `npm install && npm run build`, start command `npm start`, and set `LOVEBOOTH_PORT` to the port they assign (or map their `PORT` env to it).
-2. **Quick test via tunnel**: `npx ngrok http 5173` (or `cloudflared tunnel`) and send your partner the HTTPS URL.
+1. **Deploy it** (recommended — permanent link):
+
+   [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/marwinbalandanacceternity-bit/lovebooth)
+
+   Sign in with GitHub, click Apply, and Render builds it from `render.yaml` on the free plan. You get a permanent `https://lovebooth-xxxx.onrender.com` link. (Free instances sleep after idle — first visit may take ~50s to wake.)
+
+2. **Instant link, no account** — run `Start Online.bat` (or the "LoveBooth Online" desktop shortcut). It builds the app, serves it locally, and opens a Cloudflare quick tunnel. Share the printed `https://….trycloudflare.com` link with your partner. Works on any device; the link lasts as long as the window stays open.
 
 If your partner's video won't connect on strict mobile/corporate networks, you may need a TURN server (e.g. free tier of metered.ca) added to the `ICE` config in `src/pages/Room.jsx`.
 
