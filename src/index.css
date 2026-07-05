@@ -1,0 +1,77 @@
+@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@300;400;500;600;700;800&display=swap');
+@import 'tailwindcss';
+
+@theme {
+  --color-primary: #e11d48;
+  --color-primary-dark: #be123c;
+  --color-secondary: #fb7185;
+  --color-cta: #f97316;
+  --color-cream: #fff1f2;
+  --color-ink: #881337;
+  --font-display: 'Fredoka', sans-serif;
+  --font-body: 'Nunito', sans-serif;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--color-cream);
+  color: var(--color-ink);
+}
+
+h1, h2, h3, .font-display {
+  font-family: var(--font-display);
+}
+
+/* Soft clay-style card */
+.clay {
+  border-radius: 1.5rem;
+  background: white;
+  box-shadow:
+    0 8px 24px rgba(225, 29, 72, 0.12),
+    inset 0 -3px 6px rgba(225, 29, 72, 0.06);
+}
+
+.clay-btn {
+  border-radius: 9999px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 150ms ease-out, box-shadow 150ms ease-out, background-color 200ms;
+  box-shadow: 0 6px 16px rgba(225, 29, 72, 0.25), inset 0 -3px 5px rgba(0, 0, 0, 0.12);
+}
+.clay-btn:active {
+  transform: translateY(2px);
+  box-shadow: 0 2px 8px rgba(225, 29, 72, 0.2), inset 0 -1px 3px rgba(0, 0, 0, 0.1);
+}
+.clay-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Capture flash */
+@keyframes flash {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.flash-overlay {
+  animation: flash 500ms ease-out forwards;
+}
+
+/* Countdown pop */
+@keyframes pop {
+  0% { transform: scale(1.6); opacity: 0; }
+  30% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(0.95); opacity: 0.9; }
+}
+.countdown-pop {
+  animation: pop 1s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .countdown-pop, .flash-overlay { animation-duration: 1ms; }
+  * { transition-duration: 1ms !important; }
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #fda4af; border-radius: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
