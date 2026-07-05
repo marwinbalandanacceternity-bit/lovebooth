@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "^0.10.35",
     "jspdf": "^2.5.2",
     "jszip": "^3.10.1",
     "peerjs": "^1.5.4",

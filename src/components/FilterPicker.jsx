@@ -32,7 +32,7 @@ export default function FilterPicker({ selected, onSelect, previewStream }) {
             }`}
             aria-pressed={selected === f.id}
           >
-            <FilterThumb css={f.css} stream={previewStream} overlay={f.overlay} />
+            <FilterThumb css={f.css} stream={previewStream} overlay={f.overlay} face={f.face} />
             <span className="block text-xs font-medium py-1.5 px-1 truncate bg-white text-ink">
               {f.name}
             </span>
@@ -44,7 +44,7 @@ export default function FilterPicker({ selected, onSelect, previewStream }) {
 }
 
 // Tiny live thumbnail: re-uses the camera stream via a mini <video>
-function FilterThumb({ css, stream, overlay }) {
+function FilterThumb({ css, stream, overlay, face }) {
   return (
     <div className="relative aspect-video bg-rose-200">
       {stream ? (
@@ -61,9 +61,9 @@ function FilterThumb({ css, stream, overlay }) {
       ) : (
         <div className="w-full h-full bg-gradient-to-br from-rose-300 to-rose-400" style={{ filter: css !== 'none' ? css : undefined }} />
       )}
-      {overlay && (
+      {(overlay || face) && (
         <span className="absolute bottom-1 right-1 text-[10px] px-1.5 py-0.5 rounded-full bg-primary text-white font-display">
-          FX
+          {face ? 'FACE' : 'FX'}
         </span>
       )}
     </div>

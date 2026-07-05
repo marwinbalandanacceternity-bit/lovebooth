@@ -45,6 +45,16 @@ export const FILTERS = [
   { id: 'faded-polaroid', name: 'Faded Polaroid', category: 'B&W / Vintage', css: 'sepia(0.25) contrast(0.8) brightness(1.15) saturate(0.75)' },
   { id: 'antique', name: 'Antique', category: 'B&W / Vintage', css: 'sepia(0.7) contrast(1.1) brightness(0.95) saturate(0.9)' },
 
+  // ---------- Fun: face-tracked AR filters (MediaPipe, baked into captures) ----------
+  { id: 'dog', name: 'Puppy', category: 'Fun', css: 'brightness(1.05) saturate(1.1)', face: 'dog' },
+  { id: 'cat', name: 'Kitty', category: 'Fun', css: 'brightness(1.05)', face: 'cat' },
+  { id: 'bunny', name: 'Bunny Ears', category: 'Fun', css: 'brightness(1.08)', face: 'bunny' },
+  { id: 'sunglasses', name: 'Sunglasses', category: 'Fun', css: 'contrast(1.08) saturate(1.1)', face: 'sunglasses' },
+  { id: 'hearteyes', name: 'Heart Eyes', category: 'Fun', css: 'brightness(1.05) saturate(1.2)', face: 'hearteyes' },
+  { id: 'flowercrown', name: 'Flower Crown', category: 'Fun', css: 'brightness(1.08) saturate(1.15)', face: 'flowercrown' },
+  { id: 'crown', name: 'Royalty', category: 'Fun', css: 'brightness(1.05) contrast(1.05)', face: 'crown' },
+  { id: 'mustache', name: 'Mustache', category: 'Fun', css: 'sepia(0.15) brightness(1.02)', face: 'mustache' },
+
   // ---------- Fun (animated overlays, baked into captures) ----------
   { id: 'hearts', name: 'Floating Hearts', category: 'Fun', css: 'brightness(1.05) saturate(1.15)', overlay: 'hearts' },
   { id: 'sparkles', name: 'Sparkles', category: 'Fun', css: 'brightness(1.08) contrast(1.05)', overlay: 'sparkles' },

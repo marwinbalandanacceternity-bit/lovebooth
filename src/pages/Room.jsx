@@ -6,6 +6,7 @@ import Chat from '../components/Chat'
 import ExportPanel from '../components/ExportPanel'
 import { getFilter } from '../lib/filters'
 import { ParticleEngine } from '../lib/particles'
+import { FaceFilterEngine } from '../lib/faceFilters'
 import { RoomConnection } from '../lib/room'
 import { countdownBeep, shutterSound } from '../lib/sound'
 
@@ -47,12 +48,15 @@ export default function Room() {
     setTimeout(() => setToast(null), 3500)
   }
 
-  // ---- Particle overlay engine follows the selected filter ----
+  // ---- Overlay engine (particles or face tracking) follows the selected filter ----
   const [engine, setEngine] = useState(null)
   useEffect(() => {
-    setEngine(myFilter.overlay ? new ParticleEngine(myFilter.overlay) : null)
-  }, [myFilter.overlay])
+    if (myFilter.face) setEngine(new FaceFilterEngine(myFilter.face, () => localVideoRef.current))
+    else if (myFilter.overlay) setEngine(new ParticleEngine(myFilter.overlay))
+    else setEngine(null)
+  }, [myFilter.face, myFilter.overlay])
   engineRef.current = engine
+  if (engine) engine.mirrored = mirror
 
   // Refs so the countdown timer always reads current values
   const filterIdRef = useRef(filterId)
