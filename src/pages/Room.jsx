@@ -1,36 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { io } from 'socket.io-client'
 import VideoTile from '../components/VideoTile'
 import FilterPicker from '../components/FilterPicker'
 import Chat from '../components/Chat'
 import ExportPanel from '../components/ExportPanel'
 import { getFilter } from '../lib/filters'
 import { ParticleEngine } from '../lib/particles'
+import { RoomConnection } from '../lib/room'
 import { countdownBeep, shutterSound } from '../lib/sound'
-
-// STUN for discovery + free TURN relay so video connects even on mobile
-// carrier NAT (phone-to-phone over LTE) and strict networks.
-const ICE = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-  ],
-}
 
 export default function Room() {
   const { roomId } = useParams()
 
-  const socketRef = useRef(null)
-  const pcRef = useRef(null)
+  const roomRef = useRef(null)
   const localVideoRef = useRef(null)
   const remoteVideoRef = useRef(null)
   const localStreamRef = useRef(null)
   const pendingShotRef = useRef(null)
   const engineRef = useRef(null)
 
-  const [selfId, setSelfId] = useState(null)
   const [mySide, setMySide] = useState('left')
   const [partner, setPartner] = useState(null) // { name, ready }
   const [meReady, setMeReady] = useState(false)
@@ -66,6 +54,16 @@ export default function Room() {
   }, [myFilter.overlay])
   engineRef.current = engine
 
+  // Refs so the countdown timer always reads current values
+  const filterIdRef = useRef(filterId)
+  filterIdRef.current = filterId
+  const mirrorRef = useRef(mirror)
+  mirrorRef.current = mirror
+  const mySideRef = useRef(mySide)
+  mySideRef.current = mySide
+  const partnerRef = useRef(partner)
+  partnerRef.current = partner
+
   // ---- Capture one frame of my own camera (filter + mirror + overlay baked in) ----
   const captureFrame = useCallback(() => {
     const video = localVideoRef.current
@@ -83,22 +81,12 @@ export default function Room() {
     ctx.drawImage(video, 0, 0)
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.filter = 'none'
-    const engine = engineRef.current
-    if (engine && engine.previewW) {
-      engine.draw(ctx, canvas.width, canvas.height, engine.previewW, engine.previewH)
+    const eng = engineRef.current
+    if (eng && eng.previewW) {
+      eng.draw(ctx, canvas.width, canvas.height, eng.previewW, eng.previewH)
     }
-    return canvas.toDataURL('image/jpeg', 0.92)
+    return canvas.toDataURL('image/jpeg', 0.85)
   }, [])
-
-  // Refs so the countdown timer always reads current values
-  const filterIdRef = useRef(filterId)
-  filterIdRef.current = filterId
-  const mirrorRef = useRef(mirror)
-  mirrorRef.current = mirror
-  const mySideRef = useRef(mySide)
-  mySideRef.current = mySide
-  const partnerRef = useRef(partner)
-  partnerRef.current = partner
 
   const finishShot = useCallback((mine, partnerImg, partnerSide) => {
     const side = mySideRef.current
@@ -138,7 +126,7 @@ export default function Room() {
         return
       }
       const solo = !partnerRef.current
-      socketRef.current?.emit('photo', { img: mine })
+      roomRef.current?.sendPhoto(mine, mySideRef.current)
       if (solo) {
         finishShot(mine, null)
       } else {
@@ -154,116 +142,63 @@ export default function Room() {
     }, 1000)
   }, [captureFrame, finishShot])
 
-  // ---- Socket + WebRTC setup ----
+  // ---- Room connection (PeerJS) + camera ----
   useEffect(() => {
-    const socket = io()
-    socketRef.current = socket
     const name = sessionStorage.getItem('lovebooth-name') || 'Anonymous'
 
-    const createPeer = () => {
-      if (pcRef.current) pcRef.current.close()
-      const pc = new RTCPeerConnection(ICE)
-      pcRef.current = pc
-      localStreamRef.current?.getTracks().forEach((t) => pc.addTrack(t, localStreamRef.current))
-      pc.onicecandidate = (e) => {
-        if (e.candidate) socket.emit('signal', { type: 'candidate', candidate: e.candidate })
-      }
-      pc.ontrack = (e) => {
-        if (remoteVideoRef.current) remoteVideoRef.current.srcObject = e.streams[0]
-      }
-      return pc
-    }
+    const room = new RoomConnection(roomId, name, {
+      onState: ({ mySide: side, partner: p }) => {
+        setMySide(side)
+        setPartner(p)
+      },
+      onCountdown: (seconds) => runCountdown(seconds),
+      onPartnerPhoto: ({ img, side }) => {
+        const pending = pendingShotRef.current
+        if (pending) {
+          clearTimeout(pending.timer)
+          pendingShotRef.current = null
+          finishShot(pending.mine, img, side)
+        }
+      },
+      onPartnerFilter: (fid) => setPartnerFilterId(fid),
+      onChat: (msg) => {
+        setMessages((prev) => [...prev, msg])
+        setUnread((u) => u + 1)
+      },
+      onSwitchRequested: () => setSwitchIncoming(true),
+      onSwitchResult: (accepted) => {
+        setSwitchPending(false)
+        setSwitchIncoming(false)
+        showToast(accepted ? 'Sides switched! 🔄' : 'Your partner kept the sides as they are.')
+      },
+      onPartnerLeft: () => {
+        if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null
+        showToast('Your partner left the room.')
+      },
+      onRemoteStream: (stream) => {
+        if (remoteVideoRef.current) remoteVideoRef.current.srcObject = stream
+      },
+      onFull: () => setRoomFull(true),
+      onError: (e) => showToast(`Connection problem: ${e}. Retrying…`),
+    })
+    roomRef.current = room
+    window.__lovebooth = room // debugging hook
 
-    const start = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
-          audio: false,
-        })
+    navigator.mediaDevices
+      .getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+        audio: false,
+      })
+      .then((stream) => {
         localStreamRef.current = stream
         setLocalStream(stream)
         if (localVideoRef.current) localVideoRef.current.srcObject = stream
-      } catch (err) {
-        setCameraError(err.message || 'Camera access was denied.')
-      }
-
-      socket.emit('join-room', { roomId, name }, (res) => {
-        if (res?.error) {
-          setRoomFull(true)
-          return
-        }
-        setSelfId(socket.id)
-        setMySide(res.side)
+        room.attachStream(stream)
       })
-    }
-
-    socket.on('room-state', ({ users }) => {
-      const me = users.find((u) => u.id === socket.id)
-      const other = users.find((u) => u.id !== socket.id)
-      if (me) {
-        setMySide(me.side)
-        setMeReady(me.ready)
-      }
-      setPartner(other ? { name: other.name, ready: other.ready } : null)
-    })
-
-    socket.on('start-call', async () => {
-      const pc = createPeer()
-      const offer = await pc.createOffer()
-      await pc.setLocalDescription(offer)
-      socket.emit('signal', { type: 'offer', sdp: offer })
-    })
-
-    socket.on('signal', async (data) => {
-      if (data.type === 'offer') {
-        const pc = createPeer()
-        await pc.setRemoteDescription(data.sdp)
-        const answer = await pc.createAnswer()
-        await pc.setLocalDescription(answer)
-        socket.emit('signal', { type: 'answer', sdp: answer })
-      } else if (data.type === 'answer') {
-        await pcRef.current?.setRemoteDescription(data.sdp)
-      } else if (data.type === 'candidate') {
-        try { await pcRef.current?.addIceCandidate(data.candidate) } catch { /* ignore stale candidates */ }
-      }
-    })
-
-    socket.on('countdown-start', ({ seconds }) => runCountdown(seconds))
-
-    socket.on('partner-photo', ({ img, side }) => {
-      const pending = pendingShotRef.current
-      if (pending) {
-        clearTimeout(pending.timer)
-        pendingShotRef.current = null
-        finishShot(pending.mine, img, side)
-      }
-    })
-
-    socket.on('partner-filter', (fid) => setPartnerFilterId(fid))
-
-    socket.on('switch-requested', () => setSwitchIncoming(true))
-    socket.on('switch-result', ({ accepted }) => {
-      setSwitchPending(false)
-      setSwitchIncoming(false)
-      showToast(accepted ? 'Sides switched! 🔄' : 'Your partner kept the sides as they are.')
-    })
-
-    socket.on('chat', (msg) => {
-      setMessages((prev) => [...prev, msg])
-      setUnread((u) => u + 1)
-    })
-
-    socket.on('partner-left', () => {
-      setPartner(null)
-      if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null
-      showToast('Your partner left the room.')
-    })
-
-    start()
+      .catch((err) => setCameraError(err.message || 'Camera access was denied.'))
 
     return () => {
-      socket.disconnect()
-      pcRef.current?.close()
+      room.destroy()
       localStreamRef.current?.getTracks().forEach((t) => t.stop())
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -281,12 +216,17 @@ export default function Room() {
   const toggleReady = () => {
     const next = !meReady
     setMeReady(next)
-    socketRef.current?.emit('set-ready', next)
+    roomRef.current?.setReady(next)
   }
 
   const pickFilter = (fid) => {
     setFilterId(fid)
-    socketRef.current?.emit('filter-changed', fid)
+    roomRef.current?.sendFilter(fid)
+  }
+
+  const sendChat = (text) => {
+    const msg = roomRef.current?.sendChat(text)
+    if (msg) setMessages((prev) => [...prev, msg])
   }
 
   const copyLink = async () => {
@@ -411,7 +351,7 @@ export default function Room() {
               Mirror: {mirror ? 'On' : 'Off'}
             </button>
             <button
-              onClick={() => { setSwitchPending(true); socketRef.current?.emit('request-switch') }}
+              onClick={() => { setSwitchPending(true); roomRef.current?.requestSwitch() }}
               disabled={!partner || switchPending}
               className="clay-btn px-4 py-2 bg-cta hover:bg-orange-600 text-white text-sm"
             >
@@ -445,7 +385,7 @@ export default function Room() {
           )}
           {tab === 'strip' && <ExportPanel shots={shots} />}
           {tab === 'chat' && (
-            <Chat messages={messages} selfId={selfId} onSend={(t) => socketRef.current?.emit('chat', t)} />
+            <Chat messages={messages} selfId="me" onSend={sendChat} />
           )}
         </div>
       </main>
@@ -458,13 +398,13 @@ export default function Room() {
             <p className="text-ink/70 mb-5">{partner?.name || 'Your partner'} wants to swap left and right.</p>
             <div className="flex gap-3 justify-center">
               <button
-                onClick={() => { socketRef.current?.emit('respond-switch', true); setSwitchIncoming(false) }}
+                onClick={() => { roomRef.current?.respondSwitch(true); setSwitchIncoming(false) }}
                 className="clay-btn px-6 py-2.5 bg-primary hover:bg-primary-dark text-white"
               >
                 Switch!
               </button>
               <button
-                onClick={() => { socketRef.current?.emit('respond-switch', false); setSwitchIncoming(false) }}
+                onClick={() => { roomRef.current?.respondSwitch(false); setSwitchIncoming(false) }}
                 className="clay-btn px-6 py-2.5 bg-rose-100 hover:bg-rose-200 text-ink"
               >
                 Keep as is

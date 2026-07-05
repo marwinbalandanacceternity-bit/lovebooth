@@ -5,13 +5,13 @@ import Home from './pages/Home.jsx'
 import Room from './pages/Room.jsx'
 import './index.css'
 
+// No StrictMode: its dev double-mount would claim the room's peer ID twice
+// and briefly deadlock host election.
 ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/room/:roomId" element={<Room />} />
-      </Routes>
-    </BrowserRouter>
-  </React.StrictMode>
+  <BrowserRouter>
+    <Routes>
+      <Route path="/" element={<Home />} />
+      <Route path="/room/:roomId" element={<Room />} />
+    </Routes>
+  </BrowserRouter>
 )
