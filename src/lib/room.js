@@ -17,6 +17,10 @@ const ICE_SERVERS = [
 const COUNTDOWN_SECONDS = 8
 const RETRY_MS = 3000
 
+// A shared id both partners stamp on the same capture, so their two photos
+// can be paired deterministically regardless of who captures/arrives first.
+const newShotId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+
 export class RoomConnection {
   constructor(roomId, name, handlers) {
     this.roomId = roomId
@@ -172,10 +176,10 @@ export class RoomConnection {
         break
       }
       case 'countdown':
-        this.h.onCountdown?.(d.seconds || COUNTDOWN_SECONDS)
+        this.h.onCountdown?.(d.seconds || COUNTDOWN_SECONDS, d.shotId)
         break
       case 'photo':
-        this.h.onPartnerPhoto?.({ img: d.img, side: d.side })
+        this.h.onPartnerPhoto?.({ img: d.img, side: d.side, shotId: d.shotId })
         break
       case 'filter':
         this.h.onPartnerFilter?.(d.id)
@@ -228,9 +232,10 @@ export class RoomConnection {
     if (this.state.hostReady && this.state.guestReady) {
       this.state.hostReady = false
       this.state.guestReady = false
-      this.conn?.send({ t: 'countdown', seconds: COUNTDOWN_SECONDS })
+      const shotId = newShotId()
+      this.conn?.send({ t: 'countdown', seconds: COUNTDOWN_SECONDS, shotId })
       this._broadcastState()
-      this.h.onCountdown?.(COUNTDOWN_SECONDS)
+      this.h.onCountdown?.(COUNTDOWN_SECONDS, shotId)
     }
   }
 
@@ -245,7 +250,7 @@ export class RoomConnection {
     this.meReady = v
     if (!this.conn?.open) {
       // Solo mode: no partner yet, countdown starts right away
-      if (v) this.h.onCountdown?.(COUNTDOWN_SECONDS)
+      if (v) this.h.onCountdown?.(COUNTDOWN_SECONDS, newShotId())
       return
     }
     if (this.isHost) {
@@ -257,8 +262,8 @@ export class RoomConnection {
     }
   }
 
-  sendPhoto(img, side) {
-    this.conn?.open && this.conn.send({ t: 'photo', img, side })
+  sendPhoto(img, side, shotId) {
+    this.conn?.open && img && this.conn.send({ t: 'photo', img, side, shotId })
   }
 
   sendFilter(id) {

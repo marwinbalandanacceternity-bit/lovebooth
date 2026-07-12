@@ -12,6 +12,7 @@ export default function VideoTile({
   overlayEngine,
   connected,
   isSelf,
+  muted = true,
 }) {
   const overlayCanvasRef = useRef(null)
 
@@ -46,7 +47,7 @@ export default function VideoTile({
         ref={videoRef}
         autoPlay
         playsInline
-        muted
+        muted={muted}
         className="w-full h-full object-cover"
         style={{
           filter: filterCss !== 'none' ? filterCss : undefined,

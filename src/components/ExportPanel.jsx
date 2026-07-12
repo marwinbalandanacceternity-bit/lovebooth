@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { LAYOUTS, BORDER_THEMES, composeLayout } from '../lib/layouts'
+import { LAYOUTS, BORDER_THEMES, composeLayout, composeStrip } from '../lib/layouts'
 import { downloadComposedPng, downloadIndividuals, downloadPdf, downloadZip, downloadDataUrl } from '../lib/export'
 import { saveSession } from '../lib/history'
 
@@ -41,9 +41,16 @@ export default function ExportPanel({ shots, roomId, onReset, onDeleteShot, onTo
   }
 
   const archiveSession = async () => {
+    // Use the composed preview when it's ready; otherwise (not enough shots for
+    // the selected layout, or preview still rendering) build a strip from every
+    // shot we have so the memory always keeps a real strip image.
+    let stripCanvas = composedCanvas
+    if (!stripCanvas && shots.length > 0) {
+      stripCanvas = await composeStrip(shots, { themeId, rounded, caption, dateStamp })
+    }
     await saveSession({
       roomId,
-      stripPng: composedCanvas ? composedCanvas.toDataURL('image/jpeg', 0.9) : null,
+      stripPng: stripCanvas ? stripCanvas.toDataURL('image/jpeg', 0.9) : null,
       shots,
     })
   }

@@ -17,8 +17,9 @@ export default function Room() {
   const localVideoRef = useRef(null)
   const remoteVideoRef = useRef(null)
   const localStreamRef = useRef(null)
-  const pendingShotRef = useRef(null)
-  const partnerPhotoBufferRef = useRef(null) // partner photo that arrived before our capture
+  // shotId -> { mine?, partner?, partnerSide?, timer, done } — pairs each
+  // countdown's two photos deterministically, whoever captures/arrives first.
+  const shotsMapRef = useRef(new Map())
   const engineRef = useRef(null)
 
   const [mySide, setMySide] = useState('left')
@@ -40,6 +41,9 @@ export default function Room() {
   const [switchPending, setSwitchPending] = useState(false)
   const [toast, setToast] = useState(null)
   const [localStream, setLocalStream] = useState(null)
+  const [hasMic, setHasMic] = useState(false)
+  const [micOn, setMicOn] = useState(true)
+  const [speakerOn, setSpeakerOn] = useState(true)
 
   const myFilter = getFilter(filterId)
   const partnerFilter = getFilter(partnerFilterId)
@@ -66,6 +70,7 @@ export default function Room() {
   mirrorRef.current = mirror
   const mySideRef = useRef(mySide)
   mySideRef.current = mySide
+  const micOnRef = useRef(true)
   const partnerRef = useRef(partner)
   partnerRef.current = partner
 
@@ -98,19 +103,56 @@ export default function Room() {
 
   const finishShot = useCallback((mine, partnerImg, partnerSide) => {
     const side = mySideRef.current
-    const shot = { id: Date.now() }
-    shot[side] = mine
-    if (partnerImg) {
-      shot[partnerSide] = partnerImg
-    } else {
-      // Solo mode: duplicate my photo so layouts still work
-      shot[side === 'left' ? 'right' : 'left'] = mine
+    const other = side === 'left' ? 'right' : 'left'
+    const shot = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}` }
+    if (mine) shot[side] = mine
+    if (partnerImg) shot[partnerSide || other] = partnerImg
+    // Fill any empty side by duplicating whatever we have so every layout renders.
+    if (!shot.left && shot.right) shot.left = shot.right
+    if (!shot.right && shot.left) shot.right = shot.left
+    if (!shot.left && !shot.right) {
+      showToast('Nothing was captured — check your camera and try again.')
+      return
     }
     setShots((prev) => [...prev, shot])
-    showToast('Photo saved to your strip! 📸')
+    showToast(mine && partnerImg ? 'Photo of you two saved! 💕' : 'Photo saved to your strip! 📸')
   }, [])
 
-  const runCountdown = useCallback((seconds) => {
+  // ---- Deterministic pairing of the two photos from one countdown ----
+  const PAIR_WAIT_MS = 15000
+  const resolveShot = useCallback((shotId) => {
+    const map = shotsMapRef.current
+    const e = map.get(shotId)
+    if (!e || e.done) return
+    const haveMine = 'mine' in e
+    const havePartner = 'partner' in e
+    // Complete once both sides are in, or when the wait window expires.
+    if ((haveMine && havePartner) || e.expired) {
+      e.done = true
+      clearTimeout(e.timer)
+      map.delete(shotId)
+      finishShot(e.mine ?? null, e.partner ?? null, e.partnerSide)
+    }
+  }, [finishShot])
+
+  const recordShot = useCallback((shotId, patch) => {
+    if (!shotId) return
+    const map = shotsMapRef.current
+    let e = map.get(shotId)
+    if (!e) {
+      e = {
+        timer: setTimeout(() => {
+          const cur = map.get(shotId)
+          if (cur) { cur.expired = true; resolveShot(shotId) }
+        }, PAIR_WAIT_MS),
+      }
+      map.set(shotId, e)
+    }
+    Object.assign(e, patch)
+    resolveShot(shotId)
+  }, [resolveShot])
+
+  const runCountdown = useCallback((seconds, shotId) => {
     setMeReady(false)
     let s = seconds
     setCountdown(s)
@@ -129,41 +171,24 @@ export default function Room() {
       shutterSound()
 
       const mine = captureFrame()
-      // Partner photo that arrived while we were still capturing
-      const buffered = partnerPhotoBufferRef.current
-      const bufferedFresh = buffered && Date.now() - buffered.ts < 20000
-      partnerPhotoBufferRef.current = null
+      const solo = !partnerRef.current
 
-      if (!mine) {
-        if (bufferedFresh) {
-          // Our camera failed but the partner's photo made it — keep the
-          // moment by using their photo on both sides.
-          finishShot(buffered.img, buffered.img, buffered.side === 'left' ? 'right' : 'left')
-          showToast("Your camera didn't capture — saved your partner's photo.")
-        } else {
-          showToast('Could not capture — is your camera on?')
-        }
+      // Send our frame to the partner tagged with this shot's id.
+      if (mine) roomRef.current?.sendPhoto(mine, mySideRef.current, shotId)
+
+      if (solo) {
+        // No partner connected — save immediately (duplicate for the layout).
+        if (mine) finishShot(mine, null)
+        else showToast('Could not capture — is your camera on?')
         return
       }
-      const solo = !partnerRef.current
-      roomRef.current?.sendPhoto(mine, mySideRef.current)
-      if (solo) {
-        finishShot(mine, null)
-      } else if (bufferedFresh) {
-        finishShot(mine, buffered.img, buffered.side)
-      } else {
-        // wait for partner's frame (they send theirs at roughly the same moment;
-        // give slow mobile connections time to push the image through)
-        pendingShotRef.current = { mine, timer: setTimeout(() => {
-          if (pendingShotRef.current) {
-            finishShot(pendingShotRef.current.mine, null)
-            pendingShotRef.current = null
-            showToast("Partner's photo didn't arrive — saved yours solo.")
-          }
-        }, 15000) }
-      }
+
+      // Partnered: record our capture (even a failed one) under the shared
+      // shot id. The partner's frame merges in whenever it arrives, then the
+      // pair is saved. If nothing arrives in time, resolveShot saves what we have.
+      recordShot(shotId, { mine: mine ?? null })
     }, 1000)
-  }, [captureFrame, finishShot])
+  }, [captureFrame, finishShot, recordShot])
 
   // ---- Room connection (PeerJS) + camera ----
   useEffect(() => {
@@ -174,18 +199,11 @@ export default function Room() {
         setMySide(side)
         setPartner(p)
       },
-      onCountdown: (seconds) => runCountdown(seconds),
-      onPartnerPhoto: ({ img, side }) => {
-        const pending = pendingShotRef.current
-        if (pending) {
-          clearTimeout(pending.timer)
-          pendingShotRef.current = null
-          finishShot(pending.mine, img, side)
-        } else {
-          // Our own capture hasn't finished yet (or is about to start) —
-          // hold on to the partner's photo instead of dropping it.
-          partnerPhotoBufferRef.current = { img, side, ts: Date.now() }
-        }
+      onCountdown: (seconds, shotId) => runCountdown(seconds, shotId),
+      onPartnerPhoto: ({ img, side, shotId }) => {
+        // Merge the partner's frame into the shared shot; whether our own
+        // capture already happened or not, resolveShot pairs them correctly.
+        recordShot(shotId || `orphan-${Date.now()}`, { partner: img, partnerSide: side })
       },
       onPartnerFilter: (fid) => setPartnerFilterId(fid),
       onChat: (msg) => {
@@ -211,18 +229,31 @@ export default function Room() {
     roomRef.current = room
     window.__lovebooth = room // debugging hook
 
+    const videoConstraints = { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' }
+    // Echo cancellation + noise suppression so partners can talk without a
+    // feedback loop or hiss; auto gain keeps voices level.
+    const audioConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+    const setup = (stream) => {
+      localStreamRef.current = stream
+      setLocalStream(stream)
+      const track = stream.getAudioTracks()[0]
+      setHasMic(!!track)
+      // Start muted-out if the user had toggled the mic off before (re)mount.
+      if (track) track.enabled = micOnRef.current
+      if (localVideoRef.current) localVideoRef.current.srcObject = stream
+      room.attachStream(stream)
+    }
+
     navigator.mediaDevices
-      .getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
-        audio: false,
-      })
-      .then((stream) => {
-        localStreamRef.current = stream
-        setLocalStream(stream)
-        if (localVideoRef.current) localVideoRef.current.srcObject = stream
-        room.attachStream(stream)
-      })
-      .catch((err) => setCameraError(err.message || 'Camera access was denied.'))
+      .getUserMedia({ video: videoConstraints, audio: audioConstraints })
+      .then(setup)
+      .catch(() =>
+        // Mic denied/unavailable shouldn't kill the camera — retry video-only.
+        navigator.mediaDevices
+          .getUserMedia({ video: videoConstraints, audio: false })
+          .then(setup)
+          .catch((err) => setCameraError(err.message || 'Camera access was denied.'))
+      )
 
     return () => {
       room.destroy()
@@ -245,6 +276,20 @@ export default function Room() {
     setMeReady(next)
     roomRef.current?.setReady(next)
   }
+
+  // Mute/unmute my microphone (toggles the outgoing audio track).
+  const toggleMic = () => {
+    setMicOn((on) => {
+      const next = !on
+      micOnRef.current = next
+      const track = localStreamRef.current?.getAudioTracks?.()[0]
+      if (track) track.enabled = next
+      return next
+    })
+  }
+
+  // Speaker: mute/unmute my partner's voice on their video tile.
+  const toggleSpeaker = () => setSpeakerOn((on) => !on)
 
   const pickFilter = (fid) => {
     setFilterId(fid)
@@ -306,6 +351,7 @@ export default function Room() {
           mirrored={false}
           filterCss={partnerFilter.css}
           connected={!!partner}
+          muted={!speakerOn}
         />
       ),
     },
@@ -379,6 +425,23 @@ export default function Room() {
               aria-pressed={mirror}
             >
               Mirror: {mirror ? 'On' : 'Off'}
+            </button>
+            <button
+              onClick={toggleMic}
+              disabled={!hasMic}
+              className={`clay-btn px-4 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed ${micOn && hasMic ? 'bg-ink text-white' : 'bg-rose-100 text-ink hover:bg-rose-200'}`}
+              aria-pressed={micOn && hasMic}
+              title={hasMic ? 'Turn your microphone on/off' : 'No microphone available'}
+            >
+              {micOn && hasMic ? '🎤 Mic on' : '🔇 Mic off'}
+            </button>
+            <button
+              onClick={toggleSpeaker}
+              className={`clay-btn px-4 py-2 text-sm ${speakerOn ? 'bg-ink text-white' : 'bg-rose-100 text-ink hover:bg-rose-200'}`}
+              aria-pressed={speakerOn}
+              title="Hear your partner / mute them"
+            >
+              {speakerOn ? '🔊 Sound on' : '🔈 Sound off'}
             </button>
             <button
               onClick={() => { setSwitchPending(true); roomRef.current?.requestSwitch() }}

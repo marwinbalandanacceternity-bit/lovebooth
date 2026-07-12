@@ -95,6 +95,30 @@ function drawCaption(ctx, theme, caption, dateStamp, x, y, w, big = false) {
 }
 
 /**
+ * Compose a vertical strip of *however many* shots exist (1..N). Used for the
+ * Memories fallback so a saved set always has a real strip image, even when
+ * there aren't enough photos for the layout picked in the panel.
+ */
+export async function composeStrip(shots, { themeId, rounded, caption, dateStamp }) {
+  const theme = BORDER_THEMES.find((t) => t.id === themeId) || BORDER_THEMES[0]
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d')
+  const pairW = 800
+  const pairH = 450
+  const margin = 40
+  const n = Math.max(1, shots.length)
+  const footer = caption || dateStamp ? 90 : 40
+  canvas.width = pairW + margin * 2
+  canvas.height = margin + n * (pairH + margin) + footer
+  fillBg(ctx, canvas.width, canvas.height, theme.bg)
+  for (let i = 0; i < n; i++) {
+    await drawPair(ctx, shots[i], margin, margin + i * (pairH + margin), pairW, pairH, rounded)
+  }
+  drawCaption(ctx, theme, caption, dateStamp, margin, canvas.height - footer + 34, pairW)
+  return canvas
+}
+
+/**
  * Compose a layout. Returns a canvas.
  * options: { layoutId, shots, themeId, rounded, caption, dateStamp }
  */
