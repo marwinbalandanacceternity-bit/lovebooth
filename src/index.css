@@ -67,8 +67,39 @@ h1, h2, h3, .font-display {
   animation: pop 1s ease-out;
 }
 
+/* Heartbeat — used on the visit countdown when the reunion is under a day */
+@keyframes heartbeat {
+  0%, 100% { transform: scale(1); }
+  15% { transform: scale(1.12); }
+  30% { transform: scale(1); }
+  45% { transform: scale(1.08); }
+  60% { transform: scale(1); }
+}
+.heartbeat { animation: heartbeat 1.2s ease-in-out infinite; }
+
+/* Soft floating for hero hearts / sealed envelopes */
+@keyframes floaty {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+.floaty { animation: floaty 3s ease-in-out infinite; }
+
+/* Envelope opening */
+@keyframes seal-wiggle {
+  0%, 100% { transform: rotate(-2deg); }
+  50% { transform: rotate(2deg); }
+}
+.seal-wiggle { animation: seal-wiggle 2.5s ease-in-out infinite; }
+
+/* Gentle pop-in for cards / revealed answers */
+@keyframes rise-in {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.rise-in { animation: rise-in 400ms ease-out both; }
+
 @media (prefers-reduced-motion: reduce) {
-  .countdown-pop, .flash-overlay { animation-duration: 1ms; }
+  .countdown-pop, .flash-overlay, .heartbeat, .floaty, .seal-wiggle, .rise-in { animation: none; }
   * { transition-duration: 1ms !important; }
 }
 

@@ -192,7 +192,7 @@ export default function Room() {
 
   // ---- Room connection (PeerJS) + camera ----
   useEffect(() => {
-    const name = sessionStorage.getItem('lovebooth-name') || 'Anonymous'
+    const name = sessionStorage.getItem('lovebooth-name') || localStorage.getItem('lovebooth-name') || 'Anonymous'
 
     const room = new RoomConnection(roomId, name, {
       onState: ({ mySide: side, partner: p }) => {
